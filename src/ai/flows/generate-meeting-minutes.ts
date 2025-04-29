@@ -19,7 +19,9 @@ export type GenerateMeetingMinutesInput = z.infer<
 >;
 
 const GenerateMeetingMinutesOutputSchema = z.object({
-  minutes: z.string().describe("The generated meeting minutes."),
+  minutes: z
+    .string()
+    .describe("The generated meeting minutes in Japanese in markdown format."),
 });
 export type GenerateMeetingMinutesOutput = z.infer<
   typeof GenerateMeetingMinutesOutputSchema
@@ -40,14 +42,15 @@ const prompt = ai.definePrompt({
   },
   output: {
     schema: z.object({
-      minutes: z.string().describe("The generated meeting minutes."),
+      minutes: z.string().describe("生成された日本語の議事録(マークダウン形式)。"), // Updated description
     }),
   },
-  prompt: `You are an AI expert in generating concise and informative meeting minutes from a given transcription.
+  prompt: `あなたは、与えられた文字起こしから簡潔で有益な議事録を作成するAIエキスパートです。\n
+  生成された議事録は**マークダウン形式**で記述してください。\n
+  以下の会議の文字起こしから、主要な議題、決定事項、アクションアイテムを要約した議事録を**日本語で**生成してください。\n
 
-  Given the following meeting transcription, generate a set of meeting minutes summarizing the key discussion points, decisions, and action items.
 
-  Transcription: {{{transcription}}}
+  文字起こし: {{{transcription}}}
   `,
 });
 
