@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { transcribeAudio, type TranscriptionResult, type TimelineItem } from '@/services/elevenlabs'; // Assuming this service exists
+import { transcribeAudio, type TranscriptionResult, type TimelineItem as TimelineItemType } from '@/services/elevenlabs'; // Assuming this service exists
 import { generateMeetingMinutes, summarizeMeetingMinutes } from '@/ai/flows'; // Assuming these flows exist
 import { Upload, FileText, BrainCircuit, Search, Loader2, Mic } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
@@ -21,7 +21,7 @@ interface MeetingMinute {
   id: string;
   title: string;
   date: Date;
-  transcription: TimelineItem[];
+  transcription: TimelineItemType[];
   minutes: string;
   summary: string;
 }
@@ -34,7 +34,7 @@ const mockMinutes: MeetingMinute[] = [
 
 export default function MinutesPage() {
   const [audioFile, setAudioFile] = useState<File | null>(null);
-  const [transcription, setTranscription] = useState<TimelineItem[] | null>(null);
+  const [transcription, setTranscription] = useState<TimelineItemType[] | null>(null);
   const [minutes, setMinutes] = useState<string | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
   const [isLoadingTranscription, setIsLoadingTranscription] = useState(false);
@@ -207,7 +207,7 @@ export default function MinutesPage() {
               <h3 className="font-semibold">文字起こし結果:</h3>
               <ScrollArea className="h-48 w-full rounded-md border p-4 bg-secondary/50">
                  <div className="space-y-2">
-                   {transcription.map((item) => <TimelineItem key={`${item.speaker_id}-${item.start}`} item={item} />)}
+                   {transcription.map((item, index) => <TimelineItem key={`${item.speaker_id}-${item.start}-${index}`} item={item} />)}
                  </div>
               </ScrollArea>
               <div className="flex flex-col md:flex-row gap-4">
@@ -294,12 +294,14 @@ export default function MinutesPage() {
                              <h4 className="font-semibold mb-1">議事録:</h4>
                              <pre className="whitespace-pre-wrap bg-secondary p-2 rounded text-xs font-mono">{minute.minutes}</pre>
                           </div>
-                          <div>
-                             <h4 className="font-semibold mb-1">文字起こし:</h4>
-                             <div className="space-y-2 bg-secondary p-2 rounded text-xs">
-                               {minute.transcription.map(item => <TimelineItem key={`${item.speaker_id}-${item.start}`} item={item} />)}
+                           {minute.transcription && minute.transcription.length > 0 && (
+                             <div>
+                                <h4 className="font-semibold mb-1">文字起こし:</h4>
+                                <div className="space-y-2 bg-secondary p-2 rounded text-xs">
+                                  {minute.transcription.map((item, index) => <TimelineItem key={`${item.speaker_id}-${item.start}-${index}`} item={item} />)}
+                                </div>
                              </div>
-                          </div>
+                           )}
                         </div>
                       </details>
                     </CardContent>
@@ -323,16 +325,45 @@ const formatTime = (seconds: number): string => {
   return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
 };
 
+// Pre-define a larger set of speaker colors
+const speakerColors: Record<string, string> = {
+  speaker_0: 'text-blue-600 dark:text-blue-400',
+  speaker_1: 'text-purple-600 dark:text-purple-400',
+  speaker_2: 'text-orange-600 dark:text-orange-400',
+  speaker_3: 'text-green-600 dark:text-green-400',
+  speaker_4: 'text-red-600 dark:text-red-400',
+  speaker_5: 'text-yellow-600 dark:text-yellow-400',
+  speaker_6: 'text-pink-600 dark:text-pink-400',
+  speaker_7: 'text-teal-600 dark:text-teal-400',
+  speaker_8: 'text-cyan-600 dark:text-cyan-400',
+  speaker_9: 'text-lime-600 dark:text-lime-400',
+  speaker_10: 'text-indigo-600 dark:text-indigo-400',
+  speaker_11: 'text-rose-600 dark:text-rose-400',
+  speaker_12: 'text-amber-600 dark:text-amber-400',
+  speaker_13: 'text-emerald-600 dark:text-emerald-400',
+  speaker_14: 'text-sky-600 dark:text-sky-400',
+  speaker_15: 'text-violet-600 dark:text-violet-400',
+  speaker_16: 'text-fuchsia-600 dark:text-fuchsia-400',
+  speaker_17: 'text-stone-600 dark:text-stone-400',
+  speaker_18: 'text-zinc-600 dark:text-zinc-400',
+  speaker_19: 'text-neutral-600 dark:text-neutral-400',
+  speaker_20: 'text-slate-600 dark:text-slate-400',
+  speaker_21: 'text-blue-500 dark:text-blue-300', // Slightly lighter variants
+  speaker_22: 'text-purple-500 dark:text-purple-300',
+  speaker_23: 'text-orange-500 dark:text-orange-300',
+  speaker_24: 'text-green-500 dark:text-green-300',
+  speaker_25: 'text-red-500 dark:text-red-300',
+  speaker_26: 'text-yellow-500 dark:text-yellow-300',
+  speaker_27: 'text-pink-500 dark:text-pink-300',
+  speaker_28: 'text-teal-500 dark:text-teal-300',
+  speaker_29: 'text-cyan-500 dark:text-cyan-300',
+  speaker_30: 'text-lime-500 dark:text-lime-300',
+  speaker_31: 'text-indigo-500 dark:text-indigo-300',
+};
 
-const TimelineItem = ({ item }: { item: TimelineItem }) => {
-  // Define distinct colors for speakers (add more if needed)
-  const speakerColors: Record<string, string> = {
-    speaker_0: 'text-blue-600 dark:text-blue-400',
-    speaker_1: 'text-purple-600 dark:text-purple-400',
-    speaker_2: 'text-orange-600 dark:text-orange-400',
-    // Add more speaker colors as needed
-  };
-  const speakerColor = speakerColors[item.speaker_id] || 'text-foreground'; // Default color
+
+const TimelineItem = ({ item }: { item: TimelineItemType }) => {
+   const speakerColor = speakerColors[item.speaker_id] || 'text-foreground'; // Default color if speaker ID > 31
 
   return (
     <div className="flex items-start gap-2 text-xs">
@@ -346,4 +377,3 @@ const TimelineItem = ({ item }: { item: TimelineItem }) => {
     </div>
   );
 }
-
