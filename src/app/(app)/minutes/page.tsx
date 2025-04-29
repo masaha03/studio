@@ -8,11 +8,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { transcribeAudio } from '@/services/elevenlabs'; // Assuming this service exists
+import { transcribeAudio, type TranscriptionResult, type TimelineItem } from '@/services/elevenlabs'; // Assuming this service exists
 import { generateMeetingMinutes, summarizeMeetingMinutes } from '@/ai/flows'; // Assuming these flows exist
 import { Upload, FileText, BrainCircuit, Search, Loader2, Mic } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
-import type { TranscriptionResult } from '@/services/elevenlabs';
 import type { GenerateMeetingMinutesOutput } from '@/ai/flows/generate-meeting-minutes';
 import type { SummarizeMeetingMinutesOutput } from '@/ai/flows/summarize-meeting-minutes';
 import { Label } from '@/components/ui/label';
@@ -22,20 +21,20 @@ interface MeetingMinute {
   id: string;
   title: string;
   date: Date;
-  transcription: string;
+  transcription: TimelineItem[];
   minutes: string;
   summary: string;
 }
 
 const mockMinutes: MeetingMinute[] = [
-   { id: '1', title: '2024年5月定例役員会', date: new Date(2024, 4, 15), transcription: '役員会の文字起こしサンプルです...', minutes: '5月役員会議事録サンプル...', summary: '主要決定事項：夏祭りの日程決定。アクションアイテム：XXさんが提灯を手配。' },
-   { id: '2', title: '夏祭り実行委員会 #1', date: new Date(2024, 5, 1), transcription: '夏祭り委員会の文字起こしです...', minutes: '夏祭り委員会議事録...', summary: '屋台の配置、ボランティア募集について議論。' },
+  { id: '1', title: '2024年5月定例役員会', date: new Date(2024, 4, 15), transcription: [], minutes: '5月役員会議事録サンプル...', summary: '主要決定事項：夏祭りの日程決定。アクションアイテム：XXさんが提灯を手配。' },
+  { id: '2', title: '夏祭り実行委員会 #1', date: new Date(2024, 5, 1), transcription: [], minutes: '夏祭り委員会議事録...', summary: '屋台の配置、ボランティア募集について議論。' },
 ];
 
 
 export default function MinutesPage() {
   const [audioFile, setAudioFile] = useState<File | null>(null);
-  const [transcription, setTranscription] = useState<string | null>(null);
+  const [transcription, setTranscription] = useState<TimelineItem[] | null>(null);
   const [minutes, setMinutes] = useState<string | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
   const [isLoadingTranscription, setIsLoadingTranscription] = useState(false);
@@ -70,12 +69,8 @@ export default function MinutesPage() {
     setSummary(null); // Reset summary
 
     try {
-      // TODO: Integrate actual ElevenLabs Scribe API call here
-      // const result: TranscriptionResult = await transcribeAudio(audioFile);
-      // Using mock data for now
-      await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate API call delay
-      const result: TranscriptionResult = { text: `これは「${audioFile.name}」の文字起こし結果のサンプルです。会議では様々な議題が話し合われました。重要な決定事項やアクションアイテムも含まれています。` };
-      setTranscription(result.text);
+      const result: TranscriptionResult = await transcribeAudio(audioFile);
+      setTranscription(result.timeline);
     } catch (err) {
       console.error("Transcription error:", err);
       setError("文字起こし中にエラーが発生しました。");
@@ -99,7 +94,7 @@ export default function MinutesPage() {
       // const result: GenerateMeetingMinutesOutput = await generateMeetingMinutes({ transcription });
       // Using mock data for now
       await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate AI call delay
-      const result: GenerateMeetingMinutesOutput = { minutes: `--- 議事録 (${new Date().toLocaleDateString()}) ---\n\n参加者: ...\n\n議題:\n1. XXXについて\n2. YYYの件\n\n決定事項:\n- ZZZを承認\n\nアクションアイテム:\n- Aさん: 〜をBさんへ連絡\n- Cさん: 〜資料作成\n\n文字起こし:\n${transcription.substring(0,100)}...` };
+      const result: GenerateMeetingMinutesOutput = { minutes: `--- 議事録 (${new Date().toLocaleDateString()}) ---\n\n参加者: ...\n\n議題:\n1. XXXについて\n2. YYYの件\n\n決定事項:\n- ZZZを承認\n\nアクションアイテム:\n- Aさん: 〜をBさんへ連絡\n- Cさん: 〜資料作成\n\n文字起こし:\n...` };
       setMinutes(result.minutes);
     } catch (err) {
       console.error("Minutes generation error:", err);
@@ -110,7 +105,7 @@ export default function MinutesPage() {
     }
   }, [transcription]);
 
-   const handleGenerateSummary = useCallback(async () => {
+  const handleGenerateSummary = useCallback(async () => {
     if (!transcription) { // Using transcription as the source for summary as well
       setError("文字起こし結果がありません。");
       return;
@@ -137,35 +132,35 @@ export default function MinutesPage() {
   // TODO: Implement save functionality (e.g., to Firestore)
   const handleSaveMinutes = () => {
     if (!transcription || !minutes || !summary || !audioFile) {
-         setError("保存に必要な情報（文字起こし、議事録、要約、ファイル名）が不足しています。");
-         return;
-       }
-     const newMinute: MeetingMinute = {
-       id: Date.now().toString(), // Simple ID generation
-       title: audioFile.name.replace(/\.[^/.]+$/, "") || `議事録 ${new Date().toLocaleDateString()}`, // Use file name as title or default
-       date: new Date(),
-       transcription: transcription,
-       minutes: minutes,
-       summary: summary,
-     };
-     setSavedMinutes(prev => [newMinute, ...prev]);
-     // Reset state after saving
-     setAudioFile(null);
-     setTranscription(null);
-     setMinutes(null);
-     setSummary(null);
-     setError(null);
-     if (fileInputRef.current) {
-       fileInputRef.current.value = ''; // Clear file input
-     }
-     console.log("議事録を保存しました:", newMinute); // Replace with actual save logic
-   };
+      setError("保存に必要な情報（文字起こし、議事録、要約、ファイル名）が不足しています。");
+      return;
+    }
+    const newMinute: MeetingMinute = {
+      id: Date.now().toString(), // Simple ID generation
+      title: audioFile.name.replace(/\.[^/.]+$/, "") || `議事録 ${new Date().toLocaleDateString()}`, // Use file name as title or default
+      date: new Date(),
+      transcription: transcription,
+      minutes: minutes,
+      summary: summary,
+    };
+    setSavedMinutes(prev => [newMinute, ...prev]);
+    // Reset state after saving
+    setAudioFile(null);
+    setTranscription(null);
+    setMinutes(null);
+    setSummary(null);
+    setError(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''; // Clear file input
+    }
+    console.log("議事録を保存しました:", newMinute); // Replace with actual save logic
+  };
 
 
   const filteredMinutes = savedMinutes.filter(minute =>
     minute.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
     minute.minutes.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    minute.transcription.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    // minute.transcription.toLowerCase().includes(searchTerm.toLowerCase()) ||
     minute.summary.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -189,18 +184,18 @@ export default function MinutesPage() {
           <div className="space-y-2">
             <Label htmlFor="audio-upload">1. 音声ファイルを選択</Label>
             <div className="flex items-center gap-4">
-               <Input
-                 id="audio-upload"
-                 type="file"
-                 accept="audio/*"
-                 onChange={handleFileChange}
-                 ref={fileInputRef}
-                 className="flex-grow"
-               />
-                <Button onClick={() => fileInputRef.current?.click()} variant="outline">
-                   <Upload className="mr-2 h-4 w-4" /> ファイル選択
-                </Button>
-             </div>
+              <Input
+                id="audio-upload"
+                type="file"
+                accept="audio/*"
+                onChange={handleFileChange}
+                ref={fileInputRef}
+                className="flex-grow"
+              />
+              <Button onClick={() => fileInputRef.current?.click()} variant="outline">
+                <Upload className="mr-2 h-4 w-4" /> ファイル選択
+              </Button>
+            </div>
 
             {audioFile && <p className="text-sm text-muted-foreground">選択中のファイル: {audioFile.name}</p>}
           </div>
@@ -215,17 +210,17 @@ export default function MinutesPage() {
               <Separator />
               <h3 className="font-semibold">文字起こし結果:</h3>
               <ScrollArea className="h-48 w-full rounded-md border p-4 bg-secondary/50">
-                {transcription}
+                {transcription.map(el => <TimelineItem key={el.start} item={el} />)}
               </ScrollArea>
               <div className="flex flex-col md:flex-row gap-4">
-                 <Button onClick={handleGenerateMinutes} disabled={isLoadingMinutes} className="flex-1 bg-accent hover:bg-accent/90 text-accent-foreground">
-                   {isLoadingMinutes ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BrainCircuit className="mr-2 h-4 w-4" />}
-                   3. AIで議事録を作成
-                 </Button>
-                 <Button onClick={handleGenerateSummary} disabled={isLoadingSummary} variant="outline" className="flex-1">
-                   {isLoadingSummary ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BrainCircuit className="mr-2 h-4 w-4" />}
-                   AIで要約を作成
-                 </Button>
+                <Button onClick={handleGenerateMinutes} disabled={isLoadingMinutes} className="flex-1 bg-accent hover:bg-accent/90 text-accent-foreground">
+                  {isLoadingMinutes ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BrainCircuit className="mr-2 h-4 w-4" />}
+                  3. AIで議事録を作成
+                </Button>
+                <Button onClick={handleGenerateSummary} disabled={isLoadingSummary} variant="outline" className="flex-1">
+                  {isLoadingSummary ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BrainCircuit className="mr-2 h-4 w-4" />}
+                  AIで要約を作成
+                </Button>
               </div>
             </div>
           )}
@@ -240,23 +235,23 @@ export default function MinutesPage() {
 
           {summary && (
             <div className="space-y-2 pt-4">
-               <Separator />
-               <h3 className="font-semibold">生成された要約:</h3>
-               <Card className="bg-secondary/50 p-4">
-                   <p>{summary}</p>
-               </Card>
+              <Separator />
+              <h3 className="font-semibold">生成された要約:</h3>
+              <Card className="bg-secondary/50 p-4">
+                <p>{summary}</p>
+              </Card>
             </div>
           )}
 
           {/* Save Button */}
-           {transcription && minutes && summary && (
-             <div className="pt-4">
-                <Separator className="mb-4"/>
-               <Button onClick={handleSaveMinutes} className="w-full md:w-auto bg-green-600 hover:bg-green-700 text-white">
-                 <FileText className="mr-2 h-4 w-4" /> 議事録を保存
-               </Button>
-             </div>
-           )}
+          {transcription && minutes && summary && (
+            <div className="pt-4">
+              <Separator className="mb-4" />
+              <Button onClick={handleSaveMinutes} className="w-full md:w-auto bg-green-600 hover:bg-green-700 text-white">
+                <FileText className="mr-2 h-4 w-4" /> 議事録を保存
+              </Button>
+            </div>
+          )}
 
         </CardContent>
       </Card>
@@ -270,14 +265,14 @@ export default function MinutesPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="relative">
-             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-             <Input
-               type="search"
-               placeholder="議事録を検索..."
-               value={searchTerm}
-               onChange={(e) => setSearchTerm(e.target.value)}
-               className="pl-10 w-full"
-             />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="議事録を検索..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 w-full"
+            />
           </div>
 
           <ScrollArea className="h-96"> {/* Adjust height as needed */}
@@ -296,15 +291,15 @@ export default function MinutesPage() {
                       </p>
                       {/* Add a button or link to view full details */}
                       {/* <Button variant="link" size="sm" className="p-0 h-auto">詳細表示</Button> */}
-                       <details>
-                          <summary className="text-sm text-primary cursor-pointer hover:underline">詳細表示</summary>
-                          <div className="mt-2 space-y-2 text-sm">
-                             <h4 className="font-semibold">議事録:</h4>
-                             <pre className="whitespace-pre-wrap bg-secondary p-2 rounded text-xs">{minute.minutes}</pre>
-                             <h4 className="font-semibold">文字起こし:</h4>
-                             <pre className="whitespace-pre-wrap bg-secondary p-2 rounded text-xs">{minute.transcription}</pre>
-                          </div>
-                        </details>
+                      <details>
+                        <summary className="text-sm text-primary cursor-pointer hover:underline">詳細表示</summary>
+                        <div className="mt-2 space-y-2 text-sm">
+                          <h4 className="font-semibold">議事録:</h4>
+                          <pre className="whitespace-pre-wrap bg-secondary p-2 rounded text-xs">{minute.minutes}</pre>
+                          <h4 className="font-semibold">文字起こし:</h4>
+                          <pre className="whitespace-pre-wrap bg-secondary p-2 rounded text-xs">{minute.transcription.map(el => <TimelineItem key={el.start} item={el} />)}</pre>
+                        </div>
+                      </details>
                     </CardContent>
                   </Card>
                 ))
@@ -316,5 +311,12 @@ export default function MinutesPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+
+const TimelineItem = ({ item }: { item: TimelineItem }) => {
+  return (
+    <div></div>
   );
 }

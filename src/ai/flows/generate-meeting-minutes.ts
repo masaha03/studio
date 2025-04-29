@@ -1,4 +1,4 @@
-'use server';
+"use server";
 
 /**
  * @fileOverview Generates meeting minutes from a transcription using AI.
@@ -8,37 +8,39 @@
  * - GenerateMeetingMinutesOutput - The output type for the generateMeetingMinutes function.
  */
 
-import {ai} from '@/ai/ai-instance';
-import {z} from 'genkit';
+import { ai } from "@/ai/ai-instance";
+import { z } from "genkit";
 
 const GenerateMeetingMinutesInputSchema = z.object({
-  transcription: z
-    .string()
-    .describe('The transcription of the meeting.'),
+  transcription: z.string().describe("The transcription of the meeting."),
 });
-export type GenerateMeetingMinutesInput = z.infer<typeof GenerateMeetingMinutesInputSchema>;
+export type GenerateMeetingMinutesInput = z.infer<
+  typeof GenerateMeetingMinutesInputSchema
+>;
 
 const GenerateMeetingMinutesOutputSchema = z.object({
-  minutes: z.string().describe('The generated meeting minutes.'),
+  minutes: z.string().describe("The generated meeting minutes."),
 });
-export type GenerateMeetingMinutesOutput = z.infer<typeof GenerateMeetingMinutesOutputSchema>;
+export type GenerateMeetingMinutesOutput = z.infer<
+  typeof GenerateMeetingMinutesOutputSchema
+>;
 
-export async function generateMeetingMinutes(input: GenerateMeetingMinutesInput): Promise<GenerateMeetingMinutesOutput> {
+export async function generateMeetingMinutes(
+  input: GenerateMeetingMinutesInput
+): Promise<GenerateMeetingMinutesOutput> {
   return generateMeetingMinutesFlow(input);
 }
 
 const prompt = ai.definePrompt({
-  name: 'generateMeetingMinutesPrompt',
+  name: "generateMeetingMinutesPrompt",
   input: {
     schema: z.object({
-      transcription: z
-        .string()
-        .describe('The transcription of the meeting.'),
+      transcription: z.string().describe("The transcription of the meeting."),
     }),
   },
   output: {
     schema: z.object({
-      minutes: z.string().describe('The generated meeting minutes.'),
+      minutes: z.string().describe("The generated meeting minutes."),
     }),
   },
   prompt: `You are an AI expert in generating concise and informative meeting minutes from a given transcription.
@@ -52,11 +54,14 @@ const prompt = ai.definePrompt({
 const generateMeetingMinutesFlow = ai.defineFlow<
   typeof GenerateMeetingMinutesInputSchema,
   typeof GenerateMeetingMinutesOutputSchema
->({
-  name: 'generateMeetingMinutesFlow',
-  inputSchema: GenerateMeetingMinutesInputSchema,
-  outputSchema: GenerateMeetingMinutesOutputSchema,
-}, async input => {
-  const {output} = await prompt(input);
-  return output!;
-});
+>(
+  {
+    name: "generateMeetingMinutesFlow",
+    inputSchema: GenerateMeetingMinutesInputSchema,
+    outputSchema: GenerateMeetingMinutesOutputSchema,
+  },
+  async (input) => {
+    const { output } = await prompt(input);
+    return output!;
+  }
+);
