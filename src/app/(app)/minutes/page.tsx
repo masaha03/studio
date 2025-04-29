@@ -90,11 +90,9 @@ export default function MinutesPage() {
     setSummary(null); // Reset summary when generating new minutes
 
     try {
-      // TODO: Integrate actual AI call for minutes generation
-      // const result: GenerateMeetingMinutesOutput = await generateMeetingMinutes({ transcription });
-      // Using mock data for now
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate AI call delay
-      const result: GenerateMeetingMinutesOutput = { minutes: `--- 議事録 (${new Date().toLocaleDateString()}) ---\n\n参加者: ...\n\n議題:\n1. XXXについて\n2. YYYの件\n\n決定事項:\n- ZZZを承認\n\nアクションアイテム:\n- Aさん: 〜をBさんへ連絡\n- Cさん: 〜資料作成\n\n文字起こし:\n...` };
+      // Combine transcription text for the AI flow
+      const fullTranscriptionText = transcription.map(item => `${item.speaker_id}: ${item.text}`).join('\n');
+      const result: GenerateMeetingMinutesOutput = await generateMeetingMinutes({ transcription: fullTranscriptionText });
       setMinutes(result.minutes);
     } catch (err) {
       console.error("Minutes generation error:", err);
@@ -114,11 +112,9 @@ export default function MinutesPage() {
     setError(null);
 
     try {
-      // TODO: Integrate actual AI call for summarization
-      // const result: SummarizeMeetingMinutesOutput = await summarizeMeetingMinutes({ transcription });
-      // Using mock data for now
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate AI call delay
-      const result: SummarizeMeetingMinutesOutput = { summary: `**要約:** XXXについて議論し、ZZZが承認されました。アクションアイテムとしてAさんがBさんへ連絡、Cさんが資料作成を担当します。` };
+      // Combine transcription text for the AI flow
+      const fullTranscriptionText = transcription.map(item => `${item.speaker_id}: ${item.text}`).join('\n');
+      const result: SummarizeMeetingMinutesOutput = await summarizeMeetingMinutes({ transcription: fullTranscriptionText });
       setSummary(result.summary);
     } catch (err) {
       console.error("Summary generation error:", err);
@@ -160,7 +156,7 @@ export default function MinutesPage() {
   const filteredMinutes = savedMinutes.filter(minute =>
     minute.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
     minute.minutes.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    // minute.transcription.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    minute.transcription.some(item => item.text.toLowerCase().includes(searchTerm.toLowerCase())) || // Check transcription text
     minute.summary.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -210,14 +206,16 @@ export default function MinutesPage() {
               <Separator />
               <h3 className="font-semibold">文字起こし結果:</h3>
               <ScrollArea className="h-48 w-full rounded-md border p-4 bg-secondary/50">
-                {transcription.map(el => <TimelineItem key={el.start} item={el} />)}
+                 <div className="space-y-2">
+                   {transcription.map((item) => <TimelineItem key={`${item.speaker_id}-${item.start}`} item={item} />)}
+                 </div>
               </ScrollArea>
               <div className="flex flex-col md:flex-row gap-4">
-                <Button onClick={handleGenerateMinutes} disabled={isLoadingMinutes} className="flex-1 bg-accent hover:bg-accent/90 text-accent-foreground">
+                <Button onClick={handleGenerateMinutes} disabled={isLoadingMinutes || isLoadingTranscription} className="flex-1 bg-accent hover:bg-accent/90 text-accent-foreground">
                   {isLoadingMinutes ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BrainCircuit className="mr-2 h-4 w-4" />}
                   3. AIで議事録を作成
                 </Button>
-                <Button onClick={handleGenerateSummary} disabled={isLoadingSummary} variant="outline" className="flex-1">
+                <Button onClick={handleGenerateSummary} disabled={isLoadingSummary || isLoadingTranscription} variant="outline" className="flex-1">
                   {isLoadingSummary ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BrainCircuit className="mr-2 h-4 w-4" />}
                   AIで要約を作成
                 </Button>
@@ -289,15 +287,19 @@ export default function MinutesPage() {
                       <p className="text-sm text-muted-foreground line-clamp-2 mb-3">
                         {minute.summary}
                       </p>
-                      {/* Add a button or link to view full details */}
-                      {/* <Button variant="link" size="sm" className="p-0 h-auto">詳細表示</Button> */}
                       <details>
                         <summary className="text-sm text-primary cursor-pointer hover:underline">詳細表示</summary>
-                        <div className="mt-2 space-y-2 text-sm">
-                          <h4 className="font-semibold">議事録:</h4>
-                          <pre className="whitespace-pre-wrap bg-secondary p-2 rounded text-xs">{minute.minutes}</pre>
-                          <h4 className="font-semibold">文字起こし:</h4>
-                          <pre className="whitespace-pre-wrap bg-secondary p-2 rounded text-xs">{minute.transcription.map(el => <TimelineItem key={el.start} item={el} />)}</pre>
+                        <div className="mt-2 space-y-4 text-sm">
+                          <div>
+                             <h4 className="font-semibold mb-1">議事録:</h4>
+                             <pre className="whitespace-pre-wrap bg-secondary p-2 rounded text-xs font-mono">{minute.minutes}</pre>
+                          </div>
+                          <div>
+                             <h4 className="font-semibold mb-1">文字起こし:</h4>
+                             <div className="space-y-2 bg-secondary p-2 rounded text-xs">
+                               {minute.transcription.map(item => <TimelineItem key={`${item.speaker_id}-${item.start}`} item={item} />)}
+                             </div>
+                          </div>
                         </div>
                       </details>
                     </CardContent>
@@ -314,9 +316,34 @@ export default function MinutesPage() {
   );
 }
 
+// Utility to format seconds into MM:SS
+const formatTime = (seconds: number): string => {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+  return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
+};
+
 
 const TimelineItem = ({ item }: { item: TimelineItem }) => {
+  // Define distinct colors for speakers (add more if needed)
+  const speakerColors: Record<string, string> = {
+    speaker_0: 'text-blue-600 dark:text-blue-400',
+    speaker_1: 'text-purple-600 dark:text-purple-400',
+    speaker_2: 'text-orange-600 dark:text-orange-400',
+    // Add more speaker colors as needed
+  };
+  const speakerColor = speakerColors[item.speaker_id] || 'text-foreground'; // Default color
+
   return (
-    <div></div>
+    <div className="flex items-start gap-2 text-xs">
+      <span className="font-mono text-muted-foreground w-16 flex-shrink-0 text-right">
+        [{formatTime(item.start)}-{formatTime(item.end)}]
+      </span>
+      <span className={`font-semibold w-20 flex-shrink-0 ${speakerColor}`}>
+        {item.speaker_id || 'Unknown'}:
+      </span>
+      <p className="flex-grow text-foreground/90">{item.text}</p>
+    </div>
   );
 }
+
