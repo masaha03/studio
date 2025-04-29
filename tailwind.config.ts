@@ -87,8 +87,40 @@ export default {
   		animation: {
   			'accordion-down': 'accordion-down 0.2s ease-out',
   			'accordion-up': 'accordion-up 0.2s ease-out'
-  		}
+  		},
+  		typography: (theme: any) => ({
+  			DEFAULT: {
+  			  css: {
+  				color: theme('colors.foreground'),
+  				a: {
+  				  color: theme('colors.primary'),
+  				  '&:hover': {
+  					color: theme('colors.primary'),
+  				  },
+  				},
+  				// Customize other markdown elements as needed
+  				// Example:
+  				// h1: { color: theme('colors.primary') },
+  				// code: { color: theme('colors.accent') },
+  			  },
+  			},
+  			invert: {
+  			  css: {
+  				color: theme('colors.foreground'), // Adjust for dark mode if needed
+  				a: {
+  				  color: theme('colors.primary'),
+  				  '&:hover': {
+  					color: theme('colors.primary'),
+  				  },
+  				},
+  				// Customize other markdown elements for dark mode
+  			  },
+  			},
+  		  }),
   	}
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [
+	require("tailwindcss-animate"),
+	require('@tailwindcss/typography'),
+],
 } satisfies Config;

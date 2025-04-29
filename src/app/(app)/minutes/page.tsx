@@ -2,19 +2,21 @@
 "use client";
 
 import { useState, useRef, useCallback } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { transcribeAudio, type TranscriptionResult, type TimelineItem as TimelineItemType } from '@/services/elevenlabs'; // Assuming this service exists
-import { generateMeetingMinutes, summarizeMeetingMinutes } from '@/ai/flows'; // Assuming these flows exist
+import { transcribeAudio, type TranscriptionResult, type TimelineItem as TimelineItemType } from '@/services/elevenlabs';
+import { generateMeetingMinutes, summarizeMeetingMinutes } from '@/ai/flows';
 import { Upload, FileText, BrainCircuit, Search, Loader2, Mic } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import type { GenerateMeetingMinutesOutput } from '@/ai/flows/generate-meeting-minutes';
 import type { SummarizeMeetingMinutesOutput } from '@/ai/flows/summarize-meeting-minutes';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea'; // Keep Textarea for potential future use or comparison
 
 // Mock storage for minutes (replace with actual DB interaction)
 interface MeetingMinute {
@@ -22,35 +24,51 @@ interface MeetingMinute {
   title: string;
   date: Date;
   transcription: TimelineItemType[];
-  minutes: string;
-  summary: string;
+  minutes: string; // Markdown string
+  summary: string; // Markdown string
 }
 
 const mockMinutes: MeetingMinute[] = [
-  { id: '1', title: '2024年5月定例役員会', date: new Date(2024, 4, 15), transcription: [], minutes: '5月役員会議事録サンプル...', summary: '主要決定事項：夏祭りの日程決定。アクションアイテム：XXさんが提灯を手配。' },
-  { id: '2', title: '夏祭り実行委員会 #1', date: new Date(2024, 5, 1), transcription: [], minutes: '夏祭り委員会議事録...', summary: '屋台の配置、ボランティア募集について議論。' },
+   { id: '1', title: '2024年5月定例役員会', date: new Date(2024, 4, 15), transcription: [], minutes: `
+# 5月役員会議事録サンプル
+
+## 決定事項
+- 夏祭りの日程を8月10日に決定
+
+## アクションアイテム
+- XXさんが提灯を手配する (期限: 7月1日)
+`, summary: `**主要決定事項**：夏祭りの日程決定。\n**アクションアイテム**：XXさんが提灯を手配。` },
+   { id: '2', title: '夏祭り実行委員会 #1', date: new Date(2024, 5, 1), transcription: [], minutes: `
+# 夏祭り委員会議事録
+
+## 議題
+- 屋台の配置
+- ボランティア募集
+
+## 決定事項
+- 屋台配置図を作成 (担当: YYさん)
+`, summary: `屋台の配置、ボランティア募集について議論。\n担当：YYさんが配置図作成。` },
 ];
 
 
 export default function MinutesPage() {
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [transcription, setTranscription] = useState<TimelineItemType[] | null>(null);
-  const [minutes, setMinutes] = useState<string | null>(null);
-  const [summary, setSummary] = useState<string | null>(null);
+  const [minutes, setMinutes] = useState<string | null>(null); // Store as Markdown string
+  const [summary, setSummary] = useState<string | null>(null); // Store as Markdown string
   const [isLoadingTranscription, setIsLoadingTranscription] = useState(false);
   const [isLoadingMinutes, setIsLoadingMinutes] = useState(false);
-  const [isLoadingSummary, setIsLoadingSummary] = useState(false); // Added summary loading state
+  const [isLoadingSummary, setIsLoadingSummary] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [savedMinutes, setSavedMinutes] = useState<MeetingMinute[]>(mockMinutes); // Use mock data initially
+  const [savedMinutes, setSavedMinutes] = useState<MeetingMinute[]>(mockMinutes);
 
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       setAudioFile(file);
-      // Reset previous results
       setTranscription(null);
       setMinutes(null);
       setSummary(null);
@@ -65,8 +83,8 @@ export default function MinutesPage() {
     }
     setIsLoadingTranscription(true);
     setError(null);
-    setMinutes(null); // Reset minutes when transcribing again
-    setSummary(null); // Reset summary
+    setMinutes(null);
+    setSummary(null);
 
     try {
       const result: TranscriptionResult = await transcribeAudio(audioFile);
@@ -87,13 +105,12 @@ export default function MinutesPage() {
     }
     setIsLoadingMinutes(true);
     setError(null);
-    setSummary(null); // Reset summary when generating new minutes
+    setSummary(null);
 
     try {
-      // Combine transcription text for the AI flow
       const fullTranscriptionText = transcription.map(item => `${item.speaker_id}: ${item.text}`).join('\n');
       const result: GenerateMeetingMinutesOutput = await generateMeetingMinutes({ transcription: fullTranscriptionText });
-      setMinutes(result.minutes);
+      setMinutes(result.minutes); // Store generated markdown
     } catch (err) {
       console.error("Minutes generation error:", err);
       setError("議事録生成中にエラーが発生しました。");
@@ -104,7 +121,7 @@ export default function MinutesPage() {
   }, [transcription]);
 
   const handleGenerateSummary = useCallback(async () => {
-    if (!transcription) { // Using transcription as the source for summary as well
+    if (!transcription) {
       setError("文字起こし結果がありません。");
       return;
     }
@@ -112,10 +129,9 @@ export default function MinutesPage() {
     setError(null);
 
     try {
-      // Combine transcription text for the AI flow
       const fullTranscriptionText = transcription.map(item => `${item.speaker_id}: ${item.text}`).join('\n');
       const result: SummarizeMeetingMinutesOutput = await summarizeMeetingMinutes({ transcription: fullTranscriptionText });
-      setSummary(result.summary);
+      setSummary(result.summary); // Store generated markdown
     } catch (err) {
       console.error("Summary generation error:", err);
       setError("要約生成中にエラーが発生しました。");
@@ -125,38 +141,36 @@ export default function MinutesPage() {
     }
   }, [transcription]);
 
-  // TODO: Implement save functionality (e.g., to Firestore)
   const handleSaveMinutes = () => {
     if (!transcription || !minutes || !summary || !audioFile) {
       setError("保存に必要な情報（文字起こし、議事録、要約、ファイル名）が不足しています。");
       return;
     }
     const newMinute: MeetingMinute = {
-      id: Date.now().toString(), // Simple ID generation
-      title: audioFile.name.replace(/\.[^/.]+$/, "") || `議事録 ${new Date().toLocaleDateString()}`, // Use file name as title or default
+      id: Date.now().toString(),
+      title: audioFile.name.replace(/\.[^/.]+$/, "") || `議事録 ${new Date().toLocaleDateString()}`,
       date: new Date(),
       transcription: transcription,
       minutes: minutes,
       summary: summary,
     };
     setSavedMinutes(prev => [newMinute, ...prev]);
-    // Reset state after saving
     setAudioFile(null);
     setTranscription(null);
     setMinutes(null);
     setSummary(null);
     setError(null);
     if (fileInputRef.current) {
-      fileInputRef.current.value = ''; // Clear file input
+      fileInputRef.current.value = '';
     }
-    console.log("議事録を保存しました:", newMinute); // Replace with actual save logic
+    console.log("議事録を保存しました:", newMinute);
   };
 
 
   const filteredMinutes = savedMinutes.filter(minute =>
     minute.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
     minute.minutes.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    minute.transcription.some(item => item.text.toLowerCase().includes(searchTerm.toLowerCase())) || // Check transcription text
+    minute.transcription.some(item => item.text.toLowerCase().includes(searchTerm.toLowerCase())) ||
     minute.summary.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -164,7 +178,6 @@ export default function MinutesPage() {
     <div className="space-y-8">
       <h1 className="text-3xl font-bold text-primary">議事録管理</h1>
 
-      {/* Section 1: Create New Minutes */}
       <Card className="shadow-md">
         <CardHeader>
           <CardTitle>新規議事録作成</CardTitle>
@@ -192,7 +205,6 @@ export default function MinutesPage() {
                 <Upload className="mr-2 h-4 w-4" /> ファイル選択
               </Button>
             </div>
-
             {audioFile && <p className="text-sm text-muted-foreground">選択中のファイル: {audioFile.name}</p>}
           </div>
 
@@ -227,7 +239,15 @@ export default function MinutesPage() {
             <div className="space-y-4 pt-4">
               <Separator />
               <h3 className="font-semibold">生成された議事録:</h3>
-              <Textarea value={minutes} readOnly rows={15} className="bg-secondary/50" />
+              {/* Render Markdown using ReactMarkdown */}
+              <Card className="prose prose-sm dark:prose-invert max-w-none p-4 border bg-secondary/50 rounded-md overflow-auto max-h-96">
+                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {minutes}
+                 </ReactMarkdown>
+              </Card>
+               {/* Keep Textarea as a reference or for raw view if needed
+               <Textarea value={minutes} readOnly rows={15} className="bg-secondary/50 mt-2" />
+               */}
             </div>
           )}
 
@@ -235,13 +255,15 @@ export default function MinutesPage() {
             <div className="space-y-2 pt-4">
               <Separator />
               <h3 className="font-semibold">生成された要約:</h3>
-              <Card className="bg-secondary/50 p-4">
-                <p>{summary}</p>
+              {/* Render Markdown using ReactMarkdown */}
+              <Card className="prose prose-sm dark:prose-invert max-w-none p-4 border bg-secondary/50 rounded-md">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {summary}
+                 </ReactMarkdown>
               </Card>
             </div>
           )}
 
-          {/* Save Button */}
           {transcription && minutes && summary && (
             <div className="pt-4">
               <Separator className="mb-4" />
@@ -250,12 +272,10 @@ export default function MinutesPage() {
               </Button>
             </div>
           )}
-
         </CardContent>
       </Card>
 
 
-      {/* Section 2: View Saved Minutes */}
       <Card className="shadow-md">
         <CardHeader>
           <CardTitle>保存済み議事録</CardTitle>
@@ -273,7 +293,7 @@ export default function MinutesPage() {
             />
           </div>
 
-          <ScrollArea className="h-96"> {/* Adjust height as needed */}
+          <ScrollArea className="h-96">
             <div className="space-y-4 pr-4">
               {filteredMinutes.length > 0 ? (
                 filteredMinutes.map((minute) => (
@@ -283,21 +303,27 @@ export default function MinutesPage() {
                       <CardDescription>{minute.date.toLocaleDateString()}</CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <p className="text-sm font-medium mb-1">要約:</p>
-                      <p className="text-sm text-muted-foreground line-clamp-2 mb-3">
-                        {minute.summary}
-                      </p>
+                      <div className="text-sm font-medium mb-1">要約:</div>
+                      <div className="prose prose-sm dark:prose-invert max-w-none text-muted-foreground line-clamp-2 mb-3">
+                         <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                           {minute.summary}
+                         </ReactMarkdown>
+                      </div>
                       <details>
                         <summary className="text-sm text-primary cursor-pointer hover:underline">詳細表示</summary>
                         <div className="mt-2 space-y-4 text-sm">
                           <div>
                              <h4 className="font-semibold mb-1">議事録:</h4>
-                             <pre className="whitespace-pre-wrap bg-secondary p-2 rounded text-xs font-mono">{minute.minutes}</pre>
+                             <div className="prose prose-sm dark:prose-invert max-w-none bg-secondary p-2 rounded text-xs">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                   {minute.minutes}
+                                 </ReactMarkdown>
+                             </div>
                           </div>
                            {minute.transcription && minute.transcription.length > 0 && (
                              <div>
                                 <h4 className="font-semibold mb-1">文字起こし:</h4>
-                                <div className="space-y-2 bg-secondary p-2 rounded text-xs">
+                                <div className="space-y-2 bg-secondary p-2 rounded text-xs max-h-60 overflow-y-auto">
                                   {minute.transcription.map((item, index) => <TimelineItem key={`${item.speaker_id}-${item.start}-${index}`} item={item} />)}
                                 </div>
                              </div>
@@ -318,14 +344,12 @@ export default function MinutesPage() {
   );
 }
 
-// Utility to format seconds into MM:SS
 const formatTime = (seconds: number): string => {
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = Math.floor(seconds % 60);
   return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
 };
 
-// Pre-define a larger set of speaker colors
 const speakerColors: Record<string, string> = {
   speaker_0: 'text-blue-600 dark:text-blue-400',
   speaker_1: 'text-purple-600 dark:text-purple-400',
@@ -348,7 +372,7 @@ const speakerColors: Record<string, string> = {
   speaker_18: 'text-zinc-600 dark:text-zinc-400',
   speaker_19: 'text-neutral-600 dark:text-neutral-400',
   speaker_20: 'text-slate-600 dark:text-slate-400',
-  speaker_21: 'text-blue-500 dark:text-blue-300', // Slightly lighter variants
+  speaker_21: 'text-blue-500 dark:text-blue-300',
   speaker_22: 'text-purple-500 dark:text-purple-300',
   speaker_23: 'text-orange-500 dark:text-orange-300',
   speaker_24: 'text-green-500 dark:text-green-300',
