@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, PlusCircle, Edit, Trash2, AlertCircle, File as FileIcon, Save } from 'lucide-react';
+import { Upload, PlusCircle, Edit, Trash2, AlertCircle, File as FileIcon, Save, Loader2 } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -29,91 +29,72 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
   DialogClose,
 } from "@/components/ui/dialog";
+import { addWorkflow, deleteWorkflow, getWorkflows, updateWorkflow, Workflow, WorkflowFile } from '@/lib/firebase/workflows';
+import { Skeleton } from '@/components/ui/skeleton';
 
-interface WorkflowFile {
-  id: string;
-  name: string;
-  url?: string; // Optional: URL if stored in cloud storage
-  file?: File; // Temporary storage for new uploads
-}
-
-interface Workflow {
-  id: string;
-  name: string;
-  mermaidCode: string;
-  description?: string;
-  files: WorkflowFile[];
-}
-
-// Mock Data - Replace with Firestore
-const initialWorkflows: Workflow[] = [
-  {
-    id: '1',
-    name: '会費集金フロー',
-    description: '年会費の集金手順を図示します。',
-    mermaidCode: `graph TD
-    A[集金案内配布] --> B{集金期間};
-    B --> |集金完了| C[会計へ入金];
-    B --> |未納者| D[督促状送付];
-    D --> B;
-    C --> E[完了];
-    `,
-    files: [{ id: 'f1', name: '集金案内状テンプレート.docx' }],
-  },
-  {
-    id: '2',
-    name: '新役員選出フロー',
-    mermaidCode: `graph LR
-    A[候補者募集] --> B(推薦受付);
-    B --> C{役員会承認};
-    C --> |承認| D[総会へ上程];
-    C --> |否決| A;
-    D --> E((選出完了));
-    `,
-    files: [],
-  },
-];
 
 // Initialize Mermaid
 mermaid.initialize({
   startOnLoad: false,
-  theme: 'neutral', // or 'default', 'dark', 'forest'
+  theme: 'neutral',
    flowchart: {
-      useMaxWidth: false, // Allow diagram to take full width if needed
+      useMaxWidth: false,
       htmlLabels: true,
     },
-   themeVariables: {
-      // Example: customize colors - align with Tailwind theme if possible
-      // primaryColor: '#3498db', // Blue
-      // nodeBorder: '#3498db',
-      // lineTextColor: '#333',
-      // primaryTextColor: '#fff',
-      // ... more variables
-   }
 });
 
 export default function WorkflowsPage() {
-  const [workflows, setWorkflows] = useState<Workflow[]>(initialWorkflows);
-  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(initialWorkflows[0]?.id || null);
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
   const [editingWorkflow, setEditingWorkflow] = useState<Workflow | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+
+  // Add Modal State
   const [newWorkflowName, setNewWorkflowName] = useState('');
   const [newWorkflowDescription, setNewWorkflowDescription] = useState('');
-  const [newWorkflowMermaidCode, setNewWorkflowMermaidCode] = useState('graph TD\n    A[ステップ1] --> B[ステップ2];');
+  const [newWorkflowMermaidCode, setNewWorkflowMermaidCode] = useState(`graph TD
+    A[ステップ1] --> B[ステップ2];`);
+
   const mermaidRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   const selectedWorkflow = workflows.find(wf => wf.id === selectedWorkflowId);
 
+  // Fetch workflows from firestore
+  useEffect(() => {
+    const fetchWorkflows = async () => {
+      setIsLoading(true);
+      try {
+        const fetchedWorkflows = await getWorkflows();
+        setWorkflows(fetchedWorkflows);
+        if (fetchedWorkflows.length > 0) {
+          setSelectedWorkflowId(fetchedWorkflows[0].id!);
+        }
+      } catch (error) {
+        console.error("Failed to fetch workflows:", error);
+        toast({
+          title: "エラー",
+          description: "ワークフローの読み込みに失敗しました。",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchWorkflows();
+  }, [toast]);
+
+
   // Function to render Mermaid diagram
   const renderMermaid = useCallback(() => {
     if (mermaidRef.current && selectedWorkflow?.mermaidCode) {
-       // Clear previous render to avoid duplicates/errors
        mermaidRef.current.innerHTML = '';
        try {
          mermaid.render('mermaid-graph', selectedWorkflow.mermaidCode)
@@ -125,48 +106,55 @@ export default function WorkflowsPage() {
            .catch(e => {
              console.error("Mermaid rendering error:", e);
              if (mermaidRef.current) {
-               mermaidRef.current.innerHTML = `<pre class="text-destructive bg-destructive/10 p-2 rounded">Mermaid描画エラー:\n${e.message || e}</pre>`;
+               mermaidRef.current.innerHTML = `<pre class="text-destructive bg-destructive/10 p-2 rounded">Mermaid描画エラー:
+${e.message || e}</pre>`;
              }
-              toast({ title: "描画エラー", description: "Mermaidコードに誤りがある可能性があります。", variant: "destructive" });
            });
        } catch (e: any) {
          console.error("Mermaid rendering failed:", e);
           if (mermaidRef.current) {
-             mermaidRef.current.innerHTML = `<pre class="text-destructive bg-destructive/10 p-2 rounded">Mermaid描画エラー:\n${e.message || e}</pre>`;
+             mermaidRef.current.innerHTML = `<pre class="text-destructive bg-destructive/10 p-2 rounded">Mermaid描画エラー:
+${e.message || e}</pre>`;
            }
-         toast({ title: "描画エラー", description: "Mermaidコードを確認してください。", variant: "destructive" });
        }
      } else if (mermaidRef.current) {
        mermaidRef.current.innerHTML = '<p class="text-muted-foreground text-center py-8">ワークフローを選択するか、新規作成してください。</p>';
      }
-   }, [selectedWorkflow, toast]);
+   }, [selectedWorkflow]);
 
 
   useEffect(() => {
     renderMermaid();
-  }, [selectedWorkflowId, selectedWorkflow?.mermaidCode, renderMermaid]); // Rerender when selection or code changes
+  }, [selectedWorkflowId, selectedWorkflow?.mermaidCode, renderMermaid]);
 
-   const handleAddWorkflow = () => {
+   const handleAddWorkflow = async () => {
       if (!newWorkflowName.trim()) {
         toast({ title: "エラー", description: "ワークフロー名は必須です。", variant: "destructive" });
         return;
       }
-      const newWorkflow: Workflow = {
-        id: Date.now().toString(),
-        name: newWorkflowName.trim(),
-        description: newWorkflowDescription.trim() || undefined,
-        mermaidCode: newWorkflowMermaidCode.trim(),
-        files: [],
-      };
-      setWorkflows(prev => [...prev, newWorkflow]);
-      setSelectedWorkflowId(newWorkflow.id); // Select the newly added workflow
-      // TODO: Save to Firestore
-      toast({ title: "追加完了", description: `ワークフロー「${newWorkflow.name}」を追加しました。` });
-      setIsAddModalOpen(false);
-      // Reset add form
-      setNewWorkflowName('');
-      setNewWorkflowDescription('');
-      setNewWorkflowMermaidCode('graph TD\n    A[ステップ1] --> B[ステップ2];');
+      setIsSubmitting(true);
+      try {
+        const newWorkflowData = {
+          name: newWorkflowName.trim(),
+          description: newWorkflowDescription.trim() || '',
+          mermaidCode: newWorkflowMermaidCode.trim(),
+        };
+        const newWorkflow = await addWorkflow(newWorkflowData);
+        setWorkflows(prev => [...prev, newWorkflow]);
+        setSelectedWorkflowId(newWorkflow.id!);
+        toast({ title: "追加完了", description: `ワークフロー「${newWorkflow.name}」を追加しました。` });
+        setIsAddModalOpen(false);
+        // Reset add form
+        setNewWorkflowName('');
+        setNewWorkflowDescription('');
+        setNewWorkflowMermaidCode(`graph TD
+    A[ステップ1] --> B[ステップ2];`);
+      } catch (error) {
+        console.error("Failed to add workflow:", error);
+        toast({ title: "エラー", description: "ワークフローの追加に失敗しました。", variant: "destructive" });
+      } finally {
+        setIsSubmitting(false);
+      }
     };
 
    const handleEditWorkflow = (workflow: Workflow) => {
@@ -174,84 +162,79 @@ export default function WorkflowsPage() {
       setIsEditModalOpen(true);
     };
 
-   const handleSaveEdit = () => {
+   const handleSaveEdit = async () => {
      if (!editingWorkflow || !editingWorkflow.name.trim()) {
        toast({ title: "エラー", description: "ワークフロー名は必須です。", variant: "destructive" });
        return;
      }
-      if (!editingWorkflow.mermaidCode.trim()) {
-       toast({ title: "エラー", description: "Mermaidコードは必須です。", variant: "destructive" });
-       return;
-     }
-
-     setWorkflows(prev => prev.map(wf => wf.id === editingWorkflow.id ? editingWorkflow : wf));
-     // TODO: Update in Firestore
-     toast({ title: "更新完了", description: `ワークフロー「${editingWorkflow.name}」を更新しました。` });
-     setIsEditModalOpen(false);
-     setEditingWorkflow(null); // Clear editing state
-      // Force re-render if the selected workflow was edited
-     if(selectedWorkflowId === editingWorkflow.id) {
-        // Trigger re-render by slightly modifying state if needed, or rely on useEffect dependency
-        renderMermaid();
+     setIsSubmitting(true);
+     try {
+        const { id, uid, createdAt, ...updateData } = editingWorkflow;
+        await updateWorkflow(id!, updateData);
+        setWorkflows(prev => prev.map(wf => wf.id === id ? editingWorkflow : wf));
+        toast({ title: "更新完了", description: `ワークフロー「${editingWorkflow.name}」を更新しました。` });
+        setIsEditModalOpen(false);
+        setEditingWorkflow(null);
+     } catch (error) {
+       console.error("Failed to update workflow:", error);
+       toast({ title: "エラー", description: "ワークフローの更新に失敗しました。", variant: "destructive" });
+     } finally {
+        setIsSubmitting(false);
      }
    };
 
-   const handleDeleteWorkflow = (id: string) => {
+   const handleDeleteWorkflow = async (id: string) => {
      const workflowToDelete = workflows.find(wf => wf.id === id);
      if (!workflowToDelete) return;
 
-     setWorkflows(prev => prev.filter(wf => wf.id !== id));
-     if (selectedWorkflowId === id) {
-       setSelectedWorkflowId(workflows[0]?.id || null); // Select the first workflow or null
+     try {
+       await deleteWorkflow(id);
+       setWorkflows(prev => {
+          const newWorkflows = prev.filter(wf => wf.id !== id);
+          if (selectedWorkflowId === id) {
+            setSelectedWorkflowId(newWorkflows.length > 0 ? newWorkflows[0].id! : null);
+          }
+          return newWorkflows;
+       });
+       toast({ title: "削除完了", description: `ワークフロー「${workflowToDelete.name}」を削除しました。` });
+     } catch (error) {
+       console.error("Failed to delete workflow:", error);
+       toast({ title: "エラー", description: "ワークフローの削除に失敗しました。", variant: "destructive" });
      }
-     // TODO: Delete from Firestore (including associated files if stored there)
-     toast({ title: "削除完了", description: `ワークフロー「${workflowToDelete.name}」を削除しました。` });
    };
 
+    // TODO: Implement file upload to Firebase Storage
    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
       if (file && selectedWorkflow) {
-        const newFile: WorkflowFile = {
-          id: `temp-${Date.now()}`, // Temporary ID for UI
-          name: file.name,
-          file: file, // Store the actual file object temporarily
-        };
-         // Add the file to the currently selected workflow's files list
-         setWorkflows(prev => prev.map(wf =>
-             wf.id === selectedWorkflow.id
-               ? { ...wf, files: [...wf.files, newFile] }
-               : wf
-           ));
-         // TODO: Upload file to Firebase Storage and update the workflow document with the file URL
-         // After successful upload, replace the temp file object with the URL and persistent ID
-         console.log(`File "${file.name}" selected for workflow "${selectedWorkflow.name}". Upload logic needed.`);
-         toast({ title: "ファイル選択", description: `${file.name} を追加しました。保存するにはワークフローを更新してください。` });
-
-         // Clear the file input for next selection
+         toast({ title: "機能未実装", description: "ファイルアップロード機能は現在開発中です。", variant: "default" });
+         console.log(`File "${file.name}" selected. Upload logic to be implemented.`);
          if(fileInputRef.current) fileInputRef.current.value = '';
-
-         // If edit modal isn't open, open it to prompt save
-         if(!isEditModalOpen && selectedWorkflow){
-            handleEditWorkflow({ ...selectedWorkflow, files: [...selectedWorkflow.files, newFile] });
-         } else if (isEditModalOpen && editingWorkflow){
-            // If modal is already open, update the editing state directly
-             setEditingWorkflow(prev => prev ? { ...prev, files: [...prev.files, newFile] } : null);
-         }
       }
     };
 
+    // TODO: Implement file deletion from Firebase Storage
     const handleDeleteFile = (fileId: string) => {
-       if (!editingWorkflow) return; // Should only delete while editing
-
-       setEditingWorkflow(prev => {
-         if (!prev) return null;
-         const updatedFiles = prev.files.filter(f => f.id !== fileId);
-         return { ...prev, files: updatedFiles };
-       });
-       // TODO: Delete file from Firebase Storage if it's already uploaded
-       toast({ title: "ファイル削除", description: "ファイルをリストから削除しました。変更を保存してください。" });
+       if (!editingWorkflow) return;
+        toast({ title: "機能未実装", description: "ファイル削除機能は現在開発中です。", variant: "default" });
      };
 
+
+  if (isLoading) {
+    return (
+      <div className="space-y-8">
+        <div className="flex justify-between items-center">
+          <Skeleton className="h-10 w-64" />
+          <Skeleton className="h-10 w-48" />
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <Skeleton className="lg:col-span-1 h-48" />
+          <Skeleton className="lg:col-span-2 h-96" />
+          <Skeleton className="lg:col-span-3 h-40" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -262,7 +245,15 @@ export default function WorkflowsPage() {
          </Button>
       </div>
 
-
+       {workflows.length === 0 ? (
+          <div className="text-center py-16 border-2 border-dashed rounded-lg">
+             <h2 className="text-xl font-semibold text-muted-foreground">ワークフローがありません</h2>
+             <p className="mt-2 text-sm text-muted-foreground">最初のワークフローを作成しましょう。</p>
+             <Button onClick={() => setIsAddModalOpen(true)} className="mt-4">
+                <PlusCircle className="mr-2 h-4 w-4" /> 新規作成
+             </Button>
+          </div>
+        ) : (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Workflow Selection and Details */}
         <Card className="lg:col-span-1 shadow-md">
@@ -276,7 +267,7 @@ export default function WorkflowsPage() {
               </SelectTrigger>
               <SelectContent>
                 {workflows.map(wf => (
-                  <SelectItem key={wf.id} value={wf.id}>
+                  <SelectItem key={wf.id} value={wf.id!}>
                     {wf.name}
                   </SelectItem>
                 ))}
@@ -288,36 +279,38 @@ export default function WorkflowsPage() {
                     {selectedWorkflow.description && (
                         <p className="text-sm text-muted-foreground">{selectedWorkflow.description}</p>
                     )}
-                    <Button variant="outline" size="sm" onClick={() => handleEditWorkflow(selectedWorkflow)}>
-                      <Edit className="mr-2 h-4 w-4" /> 編集
-                    </Button>
-                     <AlertDialog>
-                       <AlertDialogTrigger asChild>
-                         <Button variant="destructive" size="sm">
-                           <Trash2 className="mr-2 h-4 w-4" /> 削除
-                         </Button>
-                       </AlertDialogTrigger>
-                       <AlertDialogContent>
-                         <AlertDialogHeader>
-                           <AlertDialogTitle>
-                             <AlertCircle className="inline-block mr-2 h-5 w-5 text-destructive" />
-                             削除確認
-                            </AlertDialogTitle>
-                           <AlertDialogDescription>
-                             ワークフロー「{selectedWorkflow.name}」を本当に削除しますか？関連ファイルも削除されます（削除ロジック実装後）。この操作は元に戻せません。
-                           </AlertDialogDescription>
-                         </AlertDialogHeader>
-                         <AlertDialogFooter>
-                           <AlertDialogCancel>キャンセル</AlertDialogCancel>
-                           <AlertDialogAction
-                             onClick={() => handleDeleteWorkflow(selectedWorkflow.id)}
-                             className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
-                           >
-                             削除する
-                           </AlertDialogAction>
-                         </AlertDialogFooter>
-                       </AlertDialogContent>
-                     </AlertDialog>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => handleEditWorkflow(selectedWorkflow)}>
+                        <Edit className="mr-2 h-4 w-4" /> 編集
+                      </Button>
+                       <AlertDialog>
+                         <AlertDialogTrigger asChild>
+                           <Button variant="destructive" size="sm">
+                             <Trash2 className="mr-2 h-4 w-4" /> 削除
+                           </Button>
+                         </AlertDialogTrigger>
+                         <AlertDialogContent>
+                           <AlertDialogHeader>
+                             <AlertDialogTitle>
+                               <AlertCircle className="inline-block mr-2 h-5 w-5 text-destructive" />
+                               削除確認
+                              </AlertDialogTitle>
+                             <AlertDialogDescription>
+                               ワークフロー「{selectedWorkflow.name}」を本当に削除しますか？この操作は元に戻せません。
+                             </AlertDialogDescription>
+                           </AlertDialogHeader>
+                           <AlertDialogFooter>
+                             <AlertDialogCancel>キャンセル</AlertDialogCancel>
+                             <AlertDialogAction
+                               onClick={() => handleDeleteWorkflow(selectedWorkflow.id!)}
+                               className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                             >
+                               削除する
+                             </AlertDialogAction>
+                           </AlertDialogFooter>
+                         </AlertDialogContent>
+                       </AlertDialog>
+                    </div>
                 </div>
              )}
           </CardContent>
@@ -331,7 +324,6 @@ export default function WorkflowsPage() {
           </CardHeader>
           <CardContent>
              <div ref={mermaidRef} className="mermaid-container w-full overflow-auto p-4 border rounded-md bg-muted/20 min-h-[300px] flex items-center justify-center">
-               {/* Mermaid SVG will be rendered here */}
                {!selectedWorkflow && <p className="text-muted-foreground">ワークフローを選択してください。</p>}
             </div>
           </CardContent>
@@ -343,7 +335,7 @@ export default function WorkflowsPage() {
              <CardHeader className="flex flex-row items-center justify-between">
                <div>
                   <CardTitle>関連ファイル</CardTitle>
-                  <CardDescription>このワークフローに関連するファイル。</CardDescription>
+                  <CardDescription>このワークフローに関連するファイル。（現在開発中）</CardDescription>
                </div>
                <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}>
                   <Upload className="mr-2 h-4 w-4" /> ファイルを追加
@@ -362,19 +354,10 @@ export default function WorkflowsPage() {
                      <li key={file.id} className="flex items-center justify-between p-2 border rounded-md bg-muted/30">
                        <div className="flex items-center gap-2">
                          <FileIcon className="h-4 w-4 text-muted-foreground" />
-                         {/* Provide download link if URL exists */}
-                          {file.url ? (
-                            <a href={file.url} target="_blank" rel="noopener noreferrer" className="text-sm hover:underline text-primary">
-                              {file.name}
-                            </a>
-                          ) : (
-                             <span className="text-sm">{file.name} {file.file ? '(未保存)' : ''}</span>
-                          )}
+                          <a href={file.url} target="_blank" rel="noopener noreferrer" className="text-sm hover:underline text-primary">
+                            {file.name}
+                          </a>
                        </div>
-                       {/* Delete only available in edit mode for clarity */}
-                       {/* <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:bg-destructive/10" onClick={() => handleDeleteFile(file.id)}>
-                         <Trash2 className="h-4 w-4" />
-                       </Button> */}
                      </li>
                    ))}
                  </ul>
@@ -385,6 +368,7 @@ export default function WorkflowsPage() {
            </Card>
         )}
       </div>
+      )}
 
        {/* Add Workflow Modal */}
        <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
@@ -409,15 +393,24 @@ export default function WorkflowsPage() {
                  value={newWorkflowMermaidCode}
                  onChange={(e) => setNewWorkflowMermaidCode(e.target.value)}
                  rows={10}
-                 placeholder={`例:\ngraph TD\n    A[開始] --> B(処理1);\n    B --> C{条件?};\n    C -->|はい| D[処理2];\n    C -->|いいえ| E[終了];\n    D --> E;`}
+                 placeholder={`例:
+graph TD
+    A[開始] --> B(処理1);
+    B --> C{条件?};
+    C -->|はい| D[処理2];
+    C -->|いいえ| E[終了];
+    D --> E;`}
                  className="font-mono text-sm"
                />
                <a href="https://mermaid.js.org/syntax/flowchart.html" target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-primary underline">Mermaid構文ヘルプ</a>
              </div>
            </div>
            <DialogFooter>
-             <DialogClose asChild><Button variant="outline">キャンセル</Button></DialogClose>
-             <Button onClick={handleAddWorkflow} className="bg-primary hover:bg-primary/90">作成</Button>
+             <DialogClose asChild><Button variant="outline" disabled={isSubmitting}>キャンセル</Button></DialogClose>
+             <Button onClick={handleAddWorkflow} disabled={isSubmitting} className="bg-primary hover:bg-primary/90">
+                {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                作成
+             </Button>
            </DialogFooter>
          </DialogContent>
        </Dialog>
@@ -431,7 +424,7 @@ export default function WorkflowsPage() {
               <DialogDescription>ワークフローの詳細を編集します。</DialogDescription>
             </DialogHeader>
             {editingWorkflow && (
-               <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-2"> {/* Added scroll */}
+               <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
                  <div className="space-y-1">
                    <Label htmlFor="edit-wf-name">ワークフロー名 <span className="text-destructive">*</span></Label>
                    <Input id="edit-wf-name" value={editingWorkflow.name} onChange={(e) => setEditingWorkflow({...editingWorkflow, name: e.target.value})} />
@@ -451,38 +444,22 @@ export default function WorkflowsPage() {
                    />
                     <a href="https://mermaid.js.org/syntax/flowchart.html" target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-primary underline">Mermaid構文ヘルプ</a>
                  </div>
-
-                  {/* File List in Edit Modal */}
                   <div className="space-y-2 pt-4 border-t">
-                     <Label>関連ファイル</Label>
+                     <Label>関連ファイル（開発中）</Label>
                      {editingWorkflow.files.length > 0 ? (
                         <ul className="space-y-2">
                           {editingWorkflow.files.map(file => (
                             <li key={file.id} className="flex items-center justify-between p-2 border rounded-md bg-muted/30 text-sm">
                                <div className="flex items-center gap-2 overflow-hidden mr-2">
                                   <FileIcon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                                  <span className="truncate" title={file.name}>{file.name} {file.file ? '(新規)' : ''}</span>
+                                  <span className="truncate" title={file.name}>{file.name}</span>
                                </div>
-
                               <AlertDialog>
                                 <AlertDialogTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:bg-destructive/10 flex-shrink-0">
+                                  <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:bg-destructive/10 flex-shrink-0" disabled>
                                     <Trash2 className="h-4 w-4" />
                                   </Button>
                                 </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                   <AlertDialogHeader>
-                                     <AlertDialogTitle>ファイル削除確認</AlertDialogTitle>
-                                     <AlertDialogDescription>
-                                       ファイル「{file.name}」をこのワークフローから削除しますか？
-                                       {file.url && ' ストレージからの削除は別途必要になる場合があります。'}
-                                     </AlertDialogDescription>
-                                   </AlertDialogHeader>
-                                   <AlertDialogFooter>
-                                     <AlertDialogCancel>キャンセル</AlertDialogCancel>
-                                     <AlertDialogAction onClick={() => handleDeleteFile(file.id)} className="bg-destructive hover:bg-destructive/90">削除</AlertDialogAction>
-                                   </AlertDialogFooter>
-                                </AlertDialogContent>
                               </AlertDialog>
                             </li>
                           ))}
@@ -495,19 +472,17 @@ export default function WorkflowsPage() {
                      </Button>
                      <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden"/>
                   </div>
-
-
                </div>
              )}
             <DialogFooter>
-              <DialogClose asChild><Button variant="outline">キャンセル</Button></DialogClose>
-              <Button onClick={handleSaveEdit} className="bg-primary hover:bg-primary/90">
+              <DialogClose asChild><Button variant="outline" disabled={isSubmitting}>キャンセル</Button></DialogClose>
+              <Button onClick={handleSaveEdit} disabled={isSubmitting} className="bg-primary hover:bg-primary/90">
+                 {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 <Save className="mr-2 h-4 w-4" /> 保存
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
-
     </div>
   );
 }
